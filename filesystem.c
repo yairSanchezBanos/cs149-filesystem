@@ -260,37 +260,67 @@ void *thread_demo(void *arg){
 
 //demo of playing with the files
 int main(){
+
     fs_init();
+    char input[256];
+    char cmd[20];
+    char filename[MAX_FILENAME];
+    char mode_str[5];
+    char data[256];
+    int fd;
 
-    // single thread demo
-    int fd = fs_open("test.txt", WRITE);
-    printf("fs_open (write): fd = %d\n", fd);
+    printf("File System Simulator\n");
+    printf("Commands: open <filename> <r/w>, write <fd> <data>, read <fd>" 
+        "close <fd>, search <filename>, delete <filename>, exit\n\n");
 
-    char *msg = "Hello, File System!";
-    int bytes_written = fs_write(fd, msg, strlen(msg));
-    printf("fs_write: bytes written = %d\n", bytes_written);
+    while(1){
+        printf("> ");
+        fgets(input, sizeof(input), stdin);
 
-    int closed = fs_close(fd);
-    printf("fs_close: result = %d\n", closed);
+        sscanf(input, "%s", cmd);
 
-    fd = fs_open("test.txt", READ);
-    printf("fs_open (read): fd = %d\n", fd);
+        if(strcmp(cmd, "exit") == 0){
+            printf("Exiting file system.\n");
+            break;
 
-    char buffer[100] = {0};
-    int bytes_read = fs_read(fd, buffer, strlen(msg));
-    printf("fs_read: bytes read = %d\n", bytes_read);
-    printf("fs_read: content = %s\n", buffer);
+        }else if(strcmp(cmd, "open") == 0){
+            sscanf(input, "%s %s %s", cmd, filename, mode_str);
+            int mode = (strcmp(mode_str, "w") == 0) ? WRITE : READ;
+            fd = fs_open(filename, mode);
+            printf("fs_open: fd = %d\n", fd);
 
-    fs_close(fd);
+        }else if(strcmp(cmd, "write") == 0){
+            sscanf(input, "%s %d %[^\n]", cmd, &fd, data);
+            int bytes = fs_write(fd, data, strlen(data));
+            printf("fs_write: bytes written = %d\n", bytes);
 
-    int found = fs_search("test.txt");
-    printf("fs_search: fcb_index = %d\n", found);
+        }else if(strcmp(cmd, "read") == 0){
+            sscanf(input, "%s %d", cmd, &fd);
+            char buffer[256] = {0};
+            int bytes = fs_read(fd, buffer, 255);
+            printf("fs_read: bytes read = %d\n", bytes);
+            printf("fs_read: content = %s\n", buffer);
 
-    int deleted = fs_delete("test.txt");
-    printf("fs_delete: result = %d\n", deleted);
+        }else if(strcmp(cmd, "close") == 0){
+            sscanf(input, "%s %d", cmd, &fd);
+            int result = fs_close(fd);
+            printf("fs_close: result = %d\n", result);
 
-    found = fs_search("test.txt");
-    printf("fs_search after delete: fcb_index = %d\n", found);
+        }else if(strcmp(cmd, "search") == 0){
+            sscanf(input, "%s %s", cmd, filename);
+            int index = fs_search(filename);
+            if(index == -1) printf("fs_search: file not found\n");
+            else printf("fs_search: file found at fcb_index = %d\n", index);
+
+        }else if(strcmp(cmd, "delete") == 0){
+            sscanf(input, "%s %s", cmd, filename);
+            int result = fs_delete(filename);
+            printf("fs_delete: result = %d\n", result);
+
+        }else{
+            printf("Unknown command.\n");
+        }
+    }
 
     // multi-thread demo
     printf("\n--- Thread Safety Demo ---\n");
