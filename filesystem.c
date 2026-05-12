@@ -36,17 +36,25 @@ struct File_descriptor
 
 };
 
+//global variables that will be used
 int sim_disk[DISK_SIZE];
 struct Super_block s1 = {DISK_SIZE, 0, 0};
 struct FCB fcb_table[MAXFILE];
 struct File_descriptor fd_table[MAXFILE];
 pthread_mutex_t lock;
 
+//takes care of oppening the file 
+//consider two cases
+//case 1: open a file that does not exist in mode write or read
+//if if in the mode for write then the file will be created, form of creating a file
+//case 2: open a file that does exist, here index for file descriptor will be returned
+
 int fs_open(char *file_name, int mode){
     pthread_mutex_lock(&lock);
     int fcb_index = -1;
     int fd_index = -1;
 
+    //leanear search for the file
     for(int i = 0; i < MAXFILE; i++){
         if(fcb_table[i].in_use == 1 && 
             strcmp(file_name, fcb_table[i].file_name) == 0) fcb_index = i;
@@ -71,6 +79,7 @@ int fs_open(char *file_name, int mode){
             pthread_mutex_unlock(&lock);
             return -1; // disk is full, cant assign anything new
         } 
+        //initializing all aspects of the new file within the table
         strcpy(fcb_table[fcb_index].file_name, file_name);
         fcb_table[fcb_index].start = s1.used_space;
         fcb_table[fcb_index].size = 0;
@@ -78,6 +87,7 @@ int fs_open(char *file_name, int mode){
         s1.num_files++;
     }
     
+    //finding available descriptor 
     for(int i = 0; i < MAXFILE; i++){
         if(fd_table[i].is_open == 0){
             fd_index = i;
@@ -85,13 +95,14 @@ int fs_open(char *file_name, int mode){
         }
     }
     
-    
+    //table is maxed out
     if(fd_index == -1){
 
         pthread_mutex_unlock(&lock);
         return fd_index;
     } 
 
+    //initiazlize everything
     fd_table[fd_index].pfcb = &fcb_table[fcb_index];
     fd_table[fd_index].mode = mode;
     fd_table[fd_index].offset = 0;
@@ -102,10 +113,12 @@ int fs_open(char *file_name, int mode){
 
 }
 
+//writes to a file, using a buffer and loop that will copy to the disk
 int fs_write(int fd, char *buffer, int num_bytes){
 
    pthread_mutex_lock(&lock);
 
+   //either descriptor is not open, or the file is not made for writing
     if(fd_table[fd].is_open != 1 || fd_table[fd].mode != WRITE) {
         pthread_mutex_unlock(&lock);
         return -1;
@@ -113,6 +126,7 @@ int fs_write(int fd, char *buffer, int num_bytes){
 
     int pos = fd_table[fd].pfcb->start + fd_table[fd].offset;
 
+    //"write to the disk", copy from buffer to disk 
     for(int i = 0; i < num_bytes; i++){
 
         sim_disk[pos + i] = buffer[i];
@@ -127,6 +141,7 @@ int fs_write(int fd, char *buffer, int num_bytes){
     return num_bytes;
 }
 
+//read from a file, same concpet as write except opposite order disk-> buffer
 int fs_read(int fd, char *buffer, int num_bytes){
 
     pthread_mutex_lock(&lock);
@@ -138,6 +153,7 @@ int fs_read(int fd, char *buffer, int num_bytes){
 
     int pos = fd_table[fd].pfcb->start + fd_table[fd].offset;
 
+    //uinique scenario where could read past file, want to prevent that 
     int bytes_left = fd_table[fd].pfcb->size - fd_table[fd].offset;
 
     if(num_bytes > bytes_left) num_bytes = bytes_left;
@@ -154,6 +170,7 @@ int fs_read(int fd, char *buffer, int num_bytes){
     return num_bytes;
 }
 
+//release the descriptor after reading or writing
 int fs_close(int fd){
 
     pthread_mutex_lock(&lock);
@@ -171,6 +188,7 @@ int fs_close(int fd){
     return 0; //closed succesfully
 }
 
+//linear search for a file
 int fs_search(char *file_name){
 
     pthread_mutex_lock(&lock);
@@ -185,6 +203,8 @@ int fs_search(char *file_name){
     return fcb_index;
 }
 
+//deletes instance of file by setting the value in file control block to 0, 
+//will be overwritten
 int fs_delete(char *file_name){
 
     pthread_mutex_lock(&lock);
@@ -210,6 +230,7 @@ int fs_delete(char *file_name){
 
 }
 
+//initialize mutex, and tabels
 void fs_init(){
 
     pthread_mutex_init(&lock, NULL);
@@ -218,46 +239,67 @@ void fs_init(){
 
 }
 
+//demo for threads shows prevention of race conditions
+void *thread_demo(void *arg){
+    char *filename = (char *)arg;
+    printf("Thread opening: %s\n", filename);
+    
+    int fd = fs_open(filename, WRITE);
+    fs_write(fd, "thread data", 11);
+    fs_close(fd);
+
+    // reopen and verify data integrity
+    fd = fs_open(filename, READ);
+    char buffer[20] = {0};
+    fs_read(fd, buffer, 11);
+    fs_close(fd);
+    
+    printf("Thread done: %s | data verified: %s\n", filename, buffer);
+    return NULL;
+}
+
+//demo of playing with the files
 int main(){
     fs_init();
 
-    // open file in write mode
+    // single thread demo
     int fd = fs_open("test.txt", WRITE);
     printf("fs_open (write): fd = %d\n", fd);
 
-    // write to file
     char *msg = "Hello, File System!";
     int bytes_written = fs_write(fd, msg, strlen(msg));
     printf("fs_write: bytes written = %d\n", bytes_written);
 
-    // close file
     int closed = fs_close(fd);
     printf("fs_close: result = %d\n", closed);
 
-    // open file in read mode
     fd = fs_open("test.txt", READ);
     printf("fs_open (read): fd = %d\n", fd);
 
-    // read file
     char buffer[100] = {0};
     int bytes_read = fs_read(fd, buffer, strlen(msg));
     printf("fs_read: bytes read = %d\n", bytes_read);
     printf("fs_read: content = %s\n", buffer);
 
-    // close file
     fs_close(fd);
 
-    // search for file
     int found = fs_search("test.txt");
     printf("fs_search: fcb_index = %d\n", found);
 
-    // delete file
     int deleted = fs_delete("test.txt");
     printf("fs_delete: result = %d\n", deleted);
 
-    // confirm deletion
     found = fs_search("test.txt");
     printf("fs_search after delete: fcb_index = %d\n", found);
+
+    // multi-thread demo
+    printf("\n--- Thread Safety Demo ---\n");
+    pthread_t t1, t2;
+    pthread_create(&t1, NULL, thread_demo, "file1.txt");
+    pthread_create(&t2, NULL, thread_demo, "file2.txt");
+    pthread_join(t1, NULL);
+    pthread_join(t2, NULL);
+    printf("Both threads completed successfully\n");
 
     return 0;
 }
