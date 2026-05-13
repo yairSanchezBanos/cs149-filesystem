@@ -37,7 +37,7 @@ struct File_descriptor
 };
 
 //global variables that will be used
-int sim_disk[DISK_SIZE];
+char sim_disk[DISK_SIZE];
 struct Super_block s1 = {DISK_SIZE, 0, 0};
 struct FCB fcb_table[MAXFILE];
 struct File_descriptor fd_table[MAXFILE];
